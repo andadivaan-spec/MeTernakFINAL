@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> Dashboard Sistem Produksi</title>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <style>
+        :root {
+            --bg-main: #FAF8F3;
+            --bg-sidebar: #FFFFFF;
+            --primary-brown: #7B4F2E;
+            --accent-tan: #A0522D;
+            --text-dark: #2C2117;
+            --border-light: #EAE3D5;
+            --card-shadow: 0 1px 4px rgba(44, 33, 23, 0.06);
+            --success-green: #4caf50;
+            --warning-amber: #b5790c;
+            --danger-red: #c0392b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-dark);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 260px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border-light);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: bold;
+            font-size: 20px;
+            color: var(--primary-brown);
+        }
+
+        .logo-img {
+            width: 100%;
+            height: auto;
+            object-fit: cover;
+            mix-blend-mode: multiply;
+        }
+
+        .nav-group {
+            margin-top: 30px;
+        }
+
+        .nav-item {
+            padding: 14px 12px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            color: #7c7067;
+            border: none;
+            background: transparent;
+            width: 100%;
+            text-align: left;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            transition: all 0.2s;
+        }
+
+        .nav-item.active {
+            background: #f5f2ee;
+            color: var(--primary-brown);
+            font-weight: 600;
+        }
+
+        .main-workspace {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .top-navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .view-pane {
+            display: none;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .view-pane.active-pane {
+            display: flex;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .card {
+            background: #FFFFFF;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: var(--card-shadow);
+            border: 1px solid var(--border-light);
+        }
+
+        .card-title {
+            font-size: 12px;
+            color: #8e8278;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            font-weight: bold;
+        }
+
+        .large-input {
+            width: 100%;
+            height: 50px;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: 0 16px;
+            font-size: 16px;
+            background: #FFFFFF;
+            color: var(--text-dark);
+            margin-top: 5px;
+            outline: none;
+        }
+
+        .large-input:focus {
+            border-color: var(--accent-tan);
+            background: #ffffff;
+        }
+
+        .btn-action {
+            height: 50px;
+            width: 100%;
+            background: var(--primary-brown);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-action:hover {
+            background: var(--accent-tan);
+        }
+
+        .stream-val {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--primary-brown);
+            margin: 10px 0;
+        }
+
+        .tracking-canvas {
+            background: #FFFFFF;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: var(--card-shadow);
+            border: 1px solid var(--border-light);
+            min-height: 250px;
+        }
+
+        .prob-bar-wrap { margin-bottom: 4px; }
+
+        .video-box {
+            width: 100%;
+            height: 160px;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 8px;
+            position: relative;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .camera-overlay {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 4px 8px;
+            font-size: 11px;
+            border-radius: 4px;
+        }
+
+        .saco-widget {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+
+        .cow-avatar-btn {
+            width: 80px;
+            height: 80px;
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: transparent;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            border: 3px solid #ffffff;
+            position: relative;
+            user-select: none;
+            object-fit: contain;
+        }
+
+        .cow-avatar-btn div {
+            font-size: 32px;
+        }
+
+        .pet-hearts {
+            position: absolute;
+            top: -25px;
+            font-size: 22px;
+            animation: floatUp 0.8s ease-out forwards;
+            display: none;
+            pointer-events: none;
+        }
+
+        @keyframes floatUp {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-40px) scale(1.3); }
+        }
+
+        .chat-window {
+            width: 340px;
+            height: 420px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+            border: 1px solid var(--border-light);
+            margin-bottom: 15px;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: var(--primary-brown);
+            color: white;
+            padding: 16px;
+            font-weight: bold;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .chat-body {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            background: #faf9f7;
+            font-size: 13px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .msg {
+            padding: 10px 12px;
+            border-radius: 12px;
+            max-width: 85%;
+        }
+
+        .msg.bot {
+            background: #eae6e1;
+            align-self: flex-start;
+            color: var(--text-dark);
+        }
+
+        .msg.user {
+            background: var(--accent-tan);
+            align-self: flex-end;
+            color: white;
+        }
+
+        .chat-footer {
+            padding: 12px;
+            border-top: 1px solid var(--border-light);
+            display: flex;
+            gap: 8px;
+        }
+
+        .chat-footer input {
+            flex: 1;
+            height: 40px;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: 0 12px;
+            outline: none;
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(44, 33, 23, 0.45);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-box {
+            background: #FFFFFF;
+            border-radius: 12px;
+            padding: 24px;
+            width: 280px;
+            text-align: center;
+            border: 1px solid var(--border-light);
+        }
+
+        @media (max-width: 768px) {
+            body { flex-direction: column; height: auto; overflow: auto; }
+            .sidebar { width: 100%; height: auto; flex-direction: row; flex-wrap: wrap; padding: 12px; }
+            .logo-area { width: 70px; }
+            .nav-group { margin-top: 0; display: flex; gap: 8px; flex: 1; overflow-x: auto; }
+            .main-workspace { padding: 14px; }
+            .metrics-grid { grid-template-columns: 1fr; }
+            .chat-window { width: 88vw; right: 0; }
+            .cow-avatar-btn { width: 60px; height: 60px; bottom: 16px; right: 16px; }
+            table { font-size: 12px; }
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav class="sidebar">
+        <div>
+            <div class="logo-area">
+                <img src="LOGO.png" alt="MeTernak" class="logo-img">
+            </div>
+            <div class="nav-group">
+                <button class="nav-item" onclick="switchTab(event, 'dashboardPane')">Dashboard
+                    Pemantauan</button>
+                <button class="nav-item active" onclick="switchTab(event, 'pengaturanDataPane')">Pengaturan Data Sapi</button>
+                <button class="nav-item" onclick="switchTab(event, 'historiSiklusPane'); loadHistoriSiklus();">Histori
+                    Siklus Sapi</button>
+            </div>
+        </div>
+        <div style="font-size: 11px; color: var(--accent-tan); font-weight: 600;" id="sidebarSessionStatus">ID Sapi:
+            Belum Diatur</div>
+    </nav>
+
+    <main class="main-workspace">
+
+        <div id="dashboardPane" class="view-pane">
+            <header class="top-navbar">
+                <div>
+                    <h2 id="dashHeadline">Pemantauan Parameter Lapangan</h2>
+                    <p style="font-size: 13px; color:#7c7067; margin-top:4px;" id="dashSubline">Silakan lengkapi
+                        parameter di bawah .</p>
+                </div>
+            </header>
+
+            <section class="metrics-grid">
+                <div class="card">
+                    <div class="card-title">1. Kamera Lendir (YOLO)</div>
+                    <div class="video-box">
+                        <video id="webcamView" autoplay playsinline muted></video>
+                        <div class="camera-overlay" id="yoloResultTag">Kamera Nonaktif</div>
+                    </div>
+                    <canvas id="yoloCanvas" style="display:none;"></canvas>
+                    <input type="file" id="yoloFileInput" accept="image/*" style="display:none;"
+                        onchange="runYoloOnUpload(event)">
+                    <div style="display:flex; gap:6px;">
+                        <button class="btn-action" style="height:36px; font-size:12px;" onclick="startWebcam()">Buka
+                            Kamera</button>
+                        <button class="btn-action" style="height:36px; font-size:12px; background:#8e8278;"
+                            onclick="runYoloOnFrame()">Pindai Frame</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">2. Input Suhu </div>
+                    <label style="font-size:11px; color:#7c7067;">Suhu Vulva (°C)</label>
+                    <input type="number" id="dashTemperature" class="large-input" placeholder="Contoh: 38.5" step="0.1"
+                        oninput="runHybridInferencePipeline()">
+                </div>
+
+                <div class="card">
+                    <div class="card-title">3. Resistansi Lendir (ESP32)</div>
+                    <div class="stream-val" id="dashIotOhm">-- Ω</div>
+                    <div
+                        style="font-size: 11px; color: var(--success-green); display: flex; align-items: center; gap: 4px;">
+                        <span style="width:6px; height:6px; background:var(--success-green); border-radius:50%;"></span>
+                        Aliran Telemetri Aktif
+                    </div>
+                </div>
+
+                <div class="card" id="decisionPanel"
+                    style="transition: all 0.3s; display:flex; flex-direction:column; justify-content:space-between;">
+                    <div class="card-title">4. Keputusan Akhir IB</div>
+                    <div id="decisionText" style="font-size:16px; font-weight:bold; color:var(--primary-brown);">
+                        Menunggu Seluruh Parameter...</div>
+                </div>
+            </section>
+
+            <section class="tracking-canvas">
+                <h3 style="color: var(--primary-brown); margin-bottom: 16px;">Probabilitas Fase Estrus (LSTM)</h3>
+                <div id="lstmEmptyMsg" style="color:#8e8278; font-size:13px; text-align:center; padding:40px 0;">
+                    Belum ada data deteksi LSTM.
+                </div>
+                <div id="probBarsContainer" style="display:none; flex-direction:column; gap:16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:#faf9f7; border:1px solid var(--border-light); border-radius:8px; padding:10px 14px;">
+                        <span style="font-size:13px; font-weight:700; color:var(--primary-brown);" id="lstmCattleId">ID Sapi: -</span>
+                    </div>
+                    <div class="prob-bar-wrap">
+                        <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+                            <span>Hari 1 — Transparan</span><span id="pDay1Label" style="font-weight:700;">0%</span>
+                        </div>
+                        <div style="background:#eee; border-radius:8px; height:16px;">
+                            <div id="pDay1Bar" style="height:100%; border-radius:8px; background:var(--success-green); width:0%; transition:width 0.6s;"></div>
+                        </div>
+                    </div>
+                    <div class="prob-bar-wrap">
+                        <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+                            <span>Hari 2 — Transisi</span><span id="pDay2Label" style="font-weight:700;">0%</span>
+                        </div>
+                        <div style="background:#eee; border-radius:8px; height:16px;">
+                            <div id="pDay2Bar" style="height:100%; border-radius:8px; background:#e67e22; width:0%; transition:width 0.6s;"></div>
+                        </div>
+                    </div>
+                    <div class="prob-bar-wrap">
+                        <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+                            <span>Hari 3 — Darah / Ovulasi</span><span id="pDay3Label" style="font-weight:700;">0%</span>
+                        </div>
+                        <div style="background:#eee; border-radius:8px; height:16px;">
+                            <div id="pDay3Bar" style="height:100%; border-radius:8px; background:var(--warning-amber); width:0%; transition:width 0.6s;"></div>
+                        </div>
+                    </div>
+                    <div class="prob-bar-wrap">
+                        <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+                            <span>Kuning — Abnormal</span><span id="pKuningLabel" style="font-weight:700;">0%</span>
+                        </div>
+                        <div style="background:#eee; border-radius:8px; height:16px;">
+                            <div id="pKuningBar" style="height:100%; border-radius:8px; background:var(--danger-red); width:0%; transition:width 0.6s;"></div>
+                        </div>
+                    </div>
+                    <div id="lstmPredicted" style="margin-top:4px; font-size:14px; font-weight:700; color:var(--primary-brown); padding:10px 14px; background:#faf9f7; border-radius:8px; border:1px solid var(--border-light);"></div>
+                </div>
+            </section>
+        </div>
+
+        <div id="pengaturanDataPane" class="view-pane active-pane">
+            <header class="top-navbar">
+                <h2>Formulir Pengaturan Data (Dataset Identitas Sapi & Pemilik)</h2>
+            </header>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                <section class="card" style="display: flex; flex-direction: column; gap: 16px;">
+                    <h3 style="color: var(--primary-brown); font-size:15px;">Lengkapi Data Profil</h3>
+                    <div>
+                        <label style="font-size: 12px; font-weight: 600;">Nama Lengkap Peternak</label>
+                        <input type="text" id="regFarmerName" class="large-input" placeholder="Masukkan nama Anda">
+                    </div>
+                    <div>
+                        <label style="font-size: 12px; font-weight: 600;">Alamat Lengkap Kandang</label>
+                        <input type="text" id="regFarmAddress" class="large-input"
+                            placeholder="Masukkan alamat kandang lengkap">
+                    </div>
+                    <div>
+                        <label style="font-size: 12px; font-weight: 600;">ID / Nomor Tag Sapi</label>
+                        <input type="text" id="regCattleId" class="large-input" placeholder="Contoh: Sapi #102">
+                    </div>
+                    <div>
+                        <label style="font-size: 12px; font-weight: 600;">Umur Sapi (Bulan/Tahun)</label>
+                        <input type="text" id="regCattleAge" class="large-input"
+                            placeholder="Contoh: 24 Bulan atau 2 Tahun">
+                    </div>
+                    <button class="btn-action" style="margin-top: 10px;" onclick="updateDatasetIdentity()">
+                        Perbarui Profil
+                    </button>
+                </section>
+            </div>
+        </div>
+
+        <div id="historiSiklusPane" class="view-pane">
+            <header class="top-navbar"><h2>Histori Siklus Sapi</h2></header>
+            <section class="card" style="padding:0; overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                    <thead>
+                        <tr style="background:#FAF8F3; text-align:left;">
+                            <th style="padding:12px 16px; border-bottom:1px solid var(--border-light);">ID Sapi</th>
+                            <th style="padding:12px 16px; border-bottom:1px solid var(--border-light);">Siklus Terakhir</th>
+                            <th style="padding:12px 16px; border-bottom:1px solid var(--border-light);">Hari Sebelum Estrus</th>
+                            <th style="padding:12px 16px; border-bottom:1px solid var(--border-light);">IB Terakhir</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historiSiklusBody">
+                        <tr><td colspan="4" style="padding:16px; text-align:center; color:#8e8278;">Belum ada data sapi tercatat.</td></tr>
+                    </tbody>
+                </table>
+            </section>
+        </div>
+    </main>
+
+    <div class="modal-overlay" id="detectionModal">
+        <div class="modal-box">
+            <div id="modalResultLabel" style="font-size:15px; font-weight:bold; color:var(--primary-brown); margin-bottom:8px;"></div>
+            <div id="modalResultAcc" style="font-size:13px; color:#7c7067; margin-bottom:16px;"></div>
+            <button class="btn-action" onclick="document.getElementById('detectionModal').style.display='none'">Tutup</button>
+        </div>
+    </div>
+
+    <div class="saco-widget">
+        <div class="chat-window" id="sacoChat">
+            <div class="chat-header">
+                <span>Smart Assistant for your Cow</span>
+                <span style="cursor:pointer;" onclick="toggleChatWindow()">✕</span>
+            </div>
+            <div class="chat-body" id="chatBody">
+                <div class="msg bot">Halo! Saya SaCo. Silakan tanyakan apa saja seputar penanganan siklus subur sapi
+                    betina!</div>
+            </div>
+            <div class="chat-footer">
+                <input type="text" id="chatInput" placeholder="Ketik pertanyaan konsultasi...">
+                <button class="btn-action" style="width:auto; padding:0 15px; height:40px;"
+                    onclick="sendChatMessage()">Kirim</button>
+            </div>
+        </div>
+
+        <div class="cow-avatar-btn" onclick="toggleChatWindow()" oncontextmenu="petCowAvatar(event); return false;"
+            style="overflow: visible;">
+            <div class="pet-hearts" id="heartIcon" style="left: 50%; transform: translateX(-50%); font-size: 24px;">💖
+            </div>
+            <img src="SaCo.png" alt="SaCo Chatbot" id="sacoImg"
+                style="width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; user-select: none;">
+        </div>
+    </div>
+
+    <script>
+        let currentSession = {
+            farmerName: '',
+            farmAddress: '',
+            cattleId: '',
+            cattleAge: '',
+            currentMucusColor: '',
+            lstmTimeSeries: [],
+            isRegistered: false
+        };
+
+        const BACKEND_URL = 'https://meternakbaru-production.up.railway.app';
+
+        function switchTab(event, targetPaneId) {
+            if (targetPaneId !== 'pengaturanDataPane' && !currentSession.isRegistered) {
+                alert("Mohon isi Data Diri Peternak & Sapi terlebih dahulu di tab 'Pengaturan Data Sapi'.");
+                targetPaneId = 'pengaturanDataPane';
+            }
+            document.querySelectorAll('.view-pane').forEach(p => p.classList.remove('active-pane'));
+            document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+            document.getElementById(targetPaneId).classList.add('active-pane');
+            const idx = targetPaneId === 'dashboardPane' ? 0 : targetPaneId === 'pengaturanDataPane' ? 1 : 2;
+            document.querySelectorAll('.nav-item')[idx].classList.add('active');
+        }
+
+        async function updateDatasetIdentity() {
+            const name = document.getElementById('regFarmerName').value.trim();
+            const address = document.getElementById('regFarmAddress').value.trim();
+            const cid = document.getElementById('regCattleId').value.trim();
+            const cage = document.getElementById('regCattleAge').value.trim();
+
+            if (!name || !address || !cid || !cage) {
+                alert("Peringatan: Mohon isi seluruh parameter kolom identitas agar pengiriman dataset ke backend valid!");
+                return;
+            }
+
+            currentSession.farmerName = name;
+            currentSession.farmAddress = address;
+            currentSession.cattleId = cid;
+            currentSession.cattleAge = cage;
+            currentSession.isRegistered = true;
+
+            document.getElementById('sidebarSessionStatus').innerText = `ID Sapi: ${cid} (${cage})`;
+            document.getElementById('dashHeadline').innerText = `Pemantauan Pembiakan: ${cid}`;
+            document.getElementById('dashSubline').innerText = `Pemilik: ${name} | Lokasi: ${address} | Umur: ${cage}`;
+
+            try {
+                await fetch(BACKEND_URL + '/api/cows', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cattle_id: cid, farmer_name: name, farm_address: address, cattle_age: cage })
+                });
+            } catch (err) {
+                console.warn('Gagal menyimpan data sapi ke server:', err.message);
+            }
+
+            alert(`Dataset Identitas [${cid}] Berhasil Disimpan!`);
+            switchTab(null, 'dashboardPane');
+        }
+
+        async function startWebcam() {
+            const video = document.getElementById('webcamView');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                video.srcObject = stream;
+                document.getElementById('yoloResultTag').innerText = "Kamera aktif, memantau lendir";
+            } catch (err) {
+                alert("Modul kamera hardware gagal diakses: " + err.message);
+            }
+        }
+
+        const YOLO_CLASS_MAP = {
+            0: { color: 'kuning', label: 'Terdeteksi: lendir kuning keruh (abnormal)', bg: 'var(--danger-red)' },
+            1: { color: 'transparant', label: 'Terdeteksi: lendir transparan (estrus hari 1)', bg: 'var(--success-green)' },
+            2: { color: 'darah', label: 'Terdeteksi: lendir berdarah (estrus hari 3)', bg: 'var(--warning-amber)' }
+        };
+
+        let yoloSession = null;
+
+        async function loadYoloModel() {
+            const tag = document.getElementById('yoloResultTag');
+            try {
+                tag.innerText = "Memuat model deteksi...";
+                yoloSession = await ort.InferenceSession.create('./best.onnx', {
+                    executionProviders: ['wasm']
+                });
+                tag.innerText = "Model deteksi siap";
+            } catch (e) {
+                tag.innerText = "Model deteksi tidak ditemukan (letakkan best.onnx di folder yang sama)";
+                console.error("YOLO load error:", e);
+            }
+        }
+
+        function preprocessImage(source) {
+            const canvas = document.getElementById('yoloCanvas');
+            canvas.width = 640; canvas.height = 640;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(source, 0, 0, 640, 640);
+            const { data } = ctx.getImageData(0, 0, 640, 640);
+            const input = new Float32Array(3 * 640 * 640);
+            for (let i = 0; i < 640 * 640; i++) {
+                input[i] = data[i * 4] / 255.0;
+                input[i + 640 * 640] = data[i * 4 + 1] / 255.0;
+                input[i + 640 * 640 * 2] = data[i * 4 + 2] / 255.0;
+            }
+            return new ort.Tensor('float32', input, [1, 3, 640, 640]);
+        }
+
+        function parseYoloOutput(outputData, confThreshold = 0.3) {
+            const numBoxes = outputData.dims[2];
+            const numAttrs = outputData.dims[1];
+            const nc = numAttrs - 4;
+            const data = outputData.data;
+
+            let bestConf = -1, bestCls = -1;
+            for (let i = 0; i < numBoxes; i++) {
+                let maxClassScore = -1, maxCls = -1;
+                for (let c = 0; c < nc; c++) {
+                    const score = data[(4 + c) * numBoxes + i];
+                    if (score > maxClassScore) { maxClassScore = score; maxCls = c; }
+                }
+                if (maxClassScore > confThreshold && maxClassScore > bestConf) {
+                    bestConf = maxClassScore; bestCls = maxCls;
+                }
+            }
+            return { cls: bestCls, conf: bestConf };
+        }
+
+        function showDetectionModal(label, conf) {
+            document.getElementById('modalResultLabel').innerText = label;
+            document.getElementById('modalResultAcc').innerText = 'Akurasi: ' + (conf * 100).toFixed(1) + '%';
+            document.getElementById('detectionModal').style.display = 'flex';
+        }
+
+        function applyDetectionResult(cls, conf) {
+            const tag = document.getElementById('yoloResultTag');
+            if (cls === -1 || !YOLO_CLASS_MAP[cls]) {
+                tag.innerHTML = "Tidak ada lendir terdeteksi";
+                tag.style.background = "#888";
+                return;
+            }
+            const info = YOLO_CLASS_MAP[cls];
+            currentSession.currentMucusColor = info.color;
+            currentSession.lastConfidence = conf;
+            tag.innerHTML = `${info.label} <span style="font-size:10px;">(${(conf * 100).toFixed(1)}%)</span>`;
+            tag.style.background = info.bg;
+            showDetectionModal(info.label, conf);
+            runHybridInferencePipeline();
+        }
+
+        async function runYoloOnUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const tag = document.getElementById('yoloResultTag');
+
+            if (!yoloSession) {
+                tag.innerText = "Model belum dimuat, tunggu sebentar...";
+                await loadYoloModel();
+                if (!yoloSession) return;
+            }
+
+            tag.innerText = "Memproses gambar...";
+            const img = new Image();
+            img.onload = async () => {
+                try {
+                    const tensor = preprocessImage(img);
+                    const feeds = { images: tensor };
+                    const results = await yoloSession.run(feeds);
+                    const output = results[Object.keys(results)[0]];
+                    const { cls, conf } = parseYoloOutput(output);
+                    applyDetectionResult(cls, conf);
+                } catch (e) {
+                    tag.innerText = "Gagal: " + e.message;
+                    console.error(e);
+                }
+            };
+            img.src = URL.createObjectURL(file);
+            event.target.value = '';
+        }
+
+        async function runYoloOnFrame() {
+            const video = document.getElementById('webcamView');
+            const tag = document.getElementById('yoloResultTag');
+
+            if (!video.srcObject) {
+                tag.innerText = "Buka kamera terlebih dahulu";
+                return;
+            }
+            if (!yoloSession) {
+                tag.innerText = "Memuat model...";
+                await loadYoloModel();
+                if (!yoloSession) return;
+            }
+
+            tag.innerText = "Memproses frame...";
+            try {
+                const tensor = preprocessImage(video);
+                const feeds = { images: tensor };
+                const results = await yoloSession.run(feeds);
+                const output = results[Object.keys(results)[0]];
+                const { cls, conf } = parseYoloOutput(output);
+                applyDetectionResult(cls, conf);
+            } catch (e) {
+                tag.innerText = "Gagal: " + e.message;
+                console.error(e);
+            }
+        }
+
+        function simulateMucusDetection() { runYoloOnFrame(); }
+
+        function initEsp32TelemetryStream() {
+            setInterval(async () => {
+                try {
+                    const res = await fetch(`${BACKEND_URL}/api/esp32/latest?cattle_id=${currentSession.cattleId}`);
+                    const data = await res.json();
+                    if (data.resistance_ohm != null) {
+                        document.getElementById('dashIotOhm').innerText = data.resistance_ohm + " Ω";
+                        runHybridInferencePipeline();
+                    }
+                } catch (err) {
+                    console.warn('Gagal ambil data ESP32:', err.message);
+                }
+            }, 3000);
+        }
+
+        function runHybridInferencePipeline() {
+            if (!currentSession.isRegistered) return;
+            const mucus = currentSession.currentMucusColor;
+            const temperatureInput = document.getElementById('dashTemperature').value;
+            const panel = document.getElementById('decisionPanel');
+            const outputText = document.getElementById('decisionText');
+
+            if (!mucus || !temperatureInput) {
+                outputText.innerText = "Lengkapi Parameter Pindai Kamera dan Nilai Suhu Vulva...";
+                panel.style.background = "#ffffff";
+                outputText.style.color = "var(--primary-brown)";
+                return;
+            }
+
+            if (mucus === 'kuning') {
+                panel.style.background = "#ffebee";
+                panel.style.borderColor = "var(--danger-red)";
+                outputText.innerHTML = "Jangan Inseminasi<br><span style='font-size:12px; font-weight:normal;'>Hasil Evaluasi: Kontraindikasi, Sapi Kemungkinan Sakit/Bunting.</span>";
+                outputText.style.color = "var(--danger-red)";
+            }
+            else if (mucus === 'transparant') {
+                panel.style.background = "#fff8e1";
+                panel.style.borderColor = "var(--warning-amber)";
+                outputText.innerHTML = "Standby / Tunggu<br><span style='font-size:12px; font-weight:normal;'>Estrus Hari ke-1: Monitor grafik tren sekuensial LSTM hingga menuju puncak kesuburan.</span>";
+                outputText.style.color = "var(--warning-amber)";
+            }
+            else if (mucus === 'darah') {
+                const currentTemp = parseFloat(temperatureInput);
+                if (currentTemp >= 38.2 && currentTemp <= 39.5) {
+                    panel.style.background = "#e8f5e9";
+                    panel.style.borderColor = "var(--success-green)";
+                    outputText.innerHTML = "Keputusan: IB Sekarang<br><span style='font-size:12px; font-weight:normal;'>Kombinasi Sempurna: Berada di Jendela Ovulasi Hari ke-3 & Suhu Fisiologis Optimal.</span>";
+                    outputText.style.color = "var(--success-green)";
+                } else {
+                    panel.style.background = "#fff8e1";
+                    panel.style.borderColor = "var(--warning-amber)";
+                    outputText.innerHTML = `Anomali Suhu<br><span style='font-size:12px; font-weight:normal;'>Lendir Hari ke-3 Terbaca Benar, Namun Nilai Suhu (${currentTemp}°C) Berada di Luar Kurva Subur.</span>`;
+                    outputText.style.color = "var(--warning-amber)";
+                }
+            }
+
+            sendDataToBackend();
+        }
+
+        async function sendDataToBackend() {
+            const payload = {
+                cattle_id: currentSession.cattleId,
+                farmer_name: currentSession.farmerName,
+                mucus_color: currentSession.currentMucusColor,
+                confidence: currentSession.lastConfidence || 1.0,
+                temperature: parseFloat(document.getElementById('dashTemperature').value) || null,
+                dt_hours: 0
+            };
+
+            try {
+                const res = await fetch(BACKEND_URL + '/api/tracking', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.lstm) {
+                    document.getElementById('lstmEmptyMsg').style.display = 'none';
+                    const bars = document.getElementById('probBarsContainer');
+                    bars.style.display = 'flex';
+                    document.getElementById('lstmCattleId').innerText = 'ID Sapi: ' + payload.cattle_id;
+                    const p1 = (data.lstm.p_day1 * 100).toFixed(1);
+                    const p2 = (data.lstm.p_day2 * 100).toFixed(1);
+                    const p3 = (data.lstm.p_day3 * 100).toFixed(1);
+                    const pk = (data.lstm.p_kuning * 100).toFixed(1);
+                    document.getElementById('pDay1Bar').style.width = p1 + '%';
+                    document.getElementById('pDay1Label').innerText = p1 + '%';
+                    document.getElementById('pDay2Bar').style.width = p2 + '%';
+                    document.getElementById('pDay2Label').innerText = p2 + '%';
+                    document.getElementById('pDay3Bar').style.width = p3 + '%';
+                    document.getElementById('pDay3Label').innerText = p3 + '%';
+                    document.getElementById('pKuningBar').style.width = pk + '%';
+                    document.getElementById('pKuningLabel').innerText = pk + '%';
+                    document.getElementById('lstmPredicted').innerText = 'Prediksi: ' + data.lstm.predicted +
+                        (data.lstm.window_remaining !== null ? ' · Sisa jendela: ' + data.lstm.window_remaining + ' hari' : '') +
+                        (data.decision ? ' · Keputusan: ' + data.decision : '');
+                }
+            } catch (err) {
+                console.warn('Backend belum berjalan:', err.message);
+            }
+        }
+
+        async function loadHistoriSiklus() {
+            const body = document.getElementById('historiSiklusBody');
+            try {
+                const res = await fetch(BACKEND_URL + '/api/cows/history');
+                const data = await res.json();
+                if (!data.length) return;
+                body.innerHTML = data.map(r => `
+                    <tr>
+                        <td style="padding:10px 16px; border-bottom:1px solid var(--border-light);">${r.cattle_id}</td>
+                        <td style="padding:10px 16px; border-bottom:1px solid var(--border-light);">${r.last_record || '-'}</td>
+                        <td style="padding:10px 16px; border-bottom:1px solid var(--border-light);">${r.estimated_day ?? '-'}</td>
+                        <td style="padding:10px 16px; border-bottom:1px solid var(--border-light);">${r.last_ib || 'Belum IB'}</td>
+                    </tr>`).join('');
+            } catch (err) {
+                console.warn('Gagal memuat histori:', err.message);
+            }
+        }
+
+        function toggleChatWindow() {
+            const heart = document.getElementById('heartIcon');
+            heart.style.display = 'block';
+            heart.style.animation = 'none';
+            heart.offsetHeight;
+            heart.style.animation = 'floatUp 0.8s ease-out forwards';
+
+            setTimeout(() => {
+                const chat = document.getElementById('sacoChat');
+                chat.style.display = (chat.style.display === 'flex') ? 'none' : 'flex';
+            }, 400);
+        }
+
+        function petCowAvatar(event) {
+            event.preventDefault();
+            const heart = document.getElementById('heartIcon');
+            heart.style.display = 'block';
+            heart.style.animation = 'none';
+            heart.offsetHeight;
+            heart.style.animation = 'floatUp 0.8s ease-out forwards';
+
+            const b = document.getElementById('chatBody');
+            const logElement = document.createElement('div');
+            logElement.className = 'msg bot';
+            logElement.style.fontStyle = 'italic';
+            logElement.innerText = "*Mooo! Kepala berkilau SaCo dan headphone-nya terasa nyaman saat dielus.*";
+            b.appendChild(logElement);
+            b.scrollTop = b.scrollHeight;
+        }
+
+        async function sendChatMessage() {
+            const inputField = document.getElementById('chatInput');
+            const chatLogBody = document.getElementById('chatBody');
+            if (!inputField.value.trim()) return;
+
+            const userText = inputField.value;
+            const userTextElement = document.createElement('div');
+            userTextElement.className = 'msg user';
+            userTextElement.innerText = userText;
+            chatLogBody.appendChild(userTextElement);
+            inputField.value = '';
+            chatLogBody.scrollTop = chatLogBody.scrollHeight;
+
+            try {
+                const res = await fetch(BACKEND_URL + '/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: userText })
+                });
+                const data = await res.json();
+                const systemReplyElement = document.createElement('div');
+                systemReplyElement.className = 'msg bot';
+                systemReplyElement.innerText = data.reply || 'Maaf, tidak ada respons.';
+                chatLogBody.appendChild(systemReplyElement);
+            } catch (err) {
+                const errEl = document.createElement('div');
+                errEl.className = 'msg bot';
+                errEl.innerText = 'Gagal terhubung ke SaCo backend.';
+                chatLogBody.appendChild(errEl);
+            }
+            chatLogBody.scrollTop = chatLogBody.scrollHeight;
+        }
+
+        window.onload = function () {
+            initEsp32TelemetryStream();
+            loadYoloModel();
+        };
+    </script>
+</body>
+
+</html>

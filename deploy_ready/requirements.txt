@@ -1,0 +1,10 @@
+flask
+flask-cors
+numpy
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+joblib
+google-genai
+gunicorn
+scikit-learn==1.6.1
+supabase
