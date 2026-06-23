@@ -681,7 +681,7 @@
             return new ort.Tensor('float32', input, [1, 3, 640, 640]);
         }
 
-        function parseYoloOutput(outputData, confThreshold = 0.3) {
+        function parseYoloOutput(outputData, confThreshold = 0.6) {
             const numBoxes = outputData.dims[2];
             const numAttrs = outputData.dims[1];
             const nc = numAttrs - 4;
