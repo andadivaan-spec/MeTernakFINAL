@@ -683,7 +683,7 @@
             return new ort.Tensor('float32', input, [1, 3, 640, 640]);
         }
 
-        function parseYoloOutput(outputData, confThreshold = 0.3) {
+        function parseYoloOutput(outputData, confThreshold = 0.15) {
             const numBoxes = outputData.dims[2];
             const numAttrs = outputData.dims[1];
             const nc = numAttrs - 4;
@@ -699,6 +699,23 @@
                 if (maxClassScore > confThreshold && maxClassScore > bestConf) {
                     bestConf = maxClassScore; bestCls = maxCls;
                 }
+            }
+            return { cls: bestCls, conf: bestConf };
+        }
+
+        function getBestClassAnyway(outputData) {
+            const numBoxes = outputData.dims[2];
+            const numAttrs = outputData.dims[1];
+            const nc = numAttrs - 4;
+            const data = outputData.data;
+            let bestConf = -1, bestCls = -1;
+            for (let i = 0; i < numBoxes; i++) {
+                let maxClassScore = -1, maxCls = -1;
+                for (let c = 0; c < nc; c++) {
+                    const score = data[(4 + c) * numBoxes + i];
+                    if (score > maxClassScore) { maxClassScore = score; maxCls = c; }
+                }
+                if (maxClassScore > bestConf) { bestConf = maxClassScore; bestCls = maxCls; }
             }
             return { cls: bestCls, conf: bestConf };
         }
@@ -744,7 +761,11 @@
                     const feeds = { images: tensor };
                     const results = await yoloSession.run(feeds);
                     const output = results[Object.keys(results)[0]];
-                    const { cls, conf } = parseYoloOutput(output);
+                    let { cls, conf } = parseYoloOutput(output);
+                    if (cls === -1) {
+                        const best = getBestClassAnyway(output);
+                        cls = best.cls; conf = best.conf;
+                    }
                     applyDetectionResult(cls, conf);
                 } catch (e) {
                     tag.innerText = "Gagal: " + e.message;
@@ -775,7 +796,8 @@
                 const feeds = { images: tensor };
                 const results = await yoloSession.run(feeds);
                 const output = results[Object.keys(results)[0]];
-                const { cls, conf } = parseYoloOutput(output);
+                let { cls, conf } = parseYoloOutput(output);
+                if (cls === -1) { const best = getBestClassAnyway(output); cls = best.cls; conf = best.conf; }
                 applyDetectionResult(cls, conf);
             } catch (e) {
                 tag.innerText = "Gagal: " + e.message;
