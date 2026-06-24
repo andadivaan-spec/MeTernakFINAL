@@ -128,6 +128,8 @@
             padding: 20px;
             box-shadow: var(--card-shadow);
             border: 1px solid var(--border-light);
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .card-title {
@@ -360,7 +362,7 @@
             .nav-group { margin-top: 0; display: flex; gap: 8px; flex: 1; overflow-x: auto; }
             .main-workspace { padding: 14px; }
             .metrics-grid { grid-template-columns: 1fr; }
-            .chat-window { width: 88vw; right: 0; }
+            .chat-window { width: 94vw; right: 0; height: 75vh; }
             .cow-avatar-btn { width: 60px; height: 60px; bottom: 16px; right: 16px; }
             table { font-size: 12px; }
         }
@@ -412,8 +414,6 @@
                             Kamera</button>
                         <button class="btn-action" style="height:36px; font-size:12px; background:#8e8278;"
                             onclick="runYoloOnFrame()">Pindai Frame</button>
-                            <button class="btn-action" style="height:36px; font-size:12px; background:#5a7a5a;"
-    onclick="document.getElementById('yoloFileInput').click()">Upload Gambar</button>
                     </div>
                 </div>
 
@@ -493,7 +493,7 @@
                 <h2>Formulir Pengaturan Data (Dataset Identitas Sapi & Pemilik)</h2>
             </header>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+            <div style="display: grid; grid-template-columns: minmax(0, 600px); gap: 30px; width: 100%;">
                 <section class="card" style="display: flex; flex-direction: column; gap: 16px;">
                     <h3 style="color: var(--primary-brown); font-size:15px;">Lengkapi Data Profil</h3>
                     <div>
@@ -552,11 +552,11 @@
     <div class="saco-widget">
         <div class="chat-window" id="sacoChat">
             <div class="chat-header">
-                <span>Smart Assistant for your Cow</span>
+                <span>Saya Asisten Pintar</span>
                 <span style="cursor:pointer;" onclick="toggleChatWindow()">✕</span>
             </div>
             <div class="chat-body" id="chatBody">
-                <div class="msg bot">Halo! Saya SaCo. Silakan tanyakan apa saja seputar penanganan siklus subur sapi
+                <div class="msg bot">Halo! Saya SaPI. Silakan tanyakan apa saja seputar penanganan siklus subur sapi
                     betina!</div>
             </div>
             <div class="chat-footer">
@@ -683,7 +683,7 @@
             return new ort.Tensor('float32', input, [1, 3, 640, 640]);
         }
 
-        function parseYoloOutput(outputData, confThreshold = 0.6) {
+        function parseYoloOutput(outputData, confThreshold = 0.3) {
             const numBoxes = outputData.dims[2];
             const numAttrs = outputData.dims[1];
             const nc = numAttrs - 4;
@@ -930,7 +930,7 @@
             const logElement = document.createElement('div');
             logElement.className = 'msg bot';
             logElement.style.fontStyle = 'italic';
-            logElement.innerText = "*Mooo! Kepala berkilau SaCo dan headphone-nya terasa nyaman saat dielus.*";
+            logElement.innerText = "*Mooo! Kepala berkilau SaPI dan headphone-nya terasa nyaman saat dielus.*";
             b.appendChild(logElement);
             b.scrollTop = b.scrollHeight;
         }
@@ -962,7 +962,7 @@
             } catch (err) {
                 const errEl = document.createElement('div');
                 errEl.className = 'msg bot';
-                errEl.innerText = 'Gagal terhubung ke SaCo backend.';
+                errEl.innerText = 'Maaf, tidak dapat memproses pertanyaan Anda saat ini.';
                 chatLogBody.appendChild(errEl);
             }
             chatLogBody.scrollTop = chatLogBody.scrollHeight;

@@ -4,10 +4,12 @@ import os
 
 chatbot_bp = Blueprint('chatbot', __name__)
 
-SYSTEM_PROMPT = """Saya SaCo, asisten ternak terpercaya Anda.
-HANYA jawab topik reproduksi & kesuburan sapi betina: siklus estrus, tanda birahi,
-waktu inseminasi buatan (IB), kebuntingan, kelahiran, dan kesehatan reproduksi.
-Tolak topik lain dengan sopan dalam Bahasa Indonesia sederhana."""
+SYSTEM_PROMPT = """Anda adalah SaPI, asisten ahli reproduksi sapi betina.
+ATURAN KETAT:
+1. HANYA jawab topik: siklus estrus, tanda birahi, waktu inseminasi buatan (IB), kebuntingan, kelahiran, kesehatan reproduksi sapi betina.
+2. Jawab LANGSUNG, tepat, dan ilmiah. Tanpa basa-basi pembuka.
+3. Tolak topik di luar reproduksi sapi dengan satu kalimat singkat dalam Bahasa Indonesia.
+4. JANGAN menyebut server, sistem, error, atau masalah teknis apapun dalam jawaban."""
 
 
 @chatbot_bp.route('/api/chat', methods=['POST'])
@@ -25,4 +27,4 @@ def chat():
         return jsonify({'reply': response.text})
     except Exception as e:
         print(f"Chat error: {e}")
-        return jsonify({'reply': 'Maaf, SaCo sedang tidak dapat dihubungi. Coba lagi sebentar.'}), 200
+        return jsonify({'reply': 'Maaf, tidak dapat memproses pertanyaan Anda saat ini. Silakan coba lagi.'}), 200

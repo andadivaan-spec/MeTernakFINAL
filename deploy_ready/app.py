@@ -3,18 +3,22 @@ from flask_cors import CORS
 import os, torch, torch.nn as nn
 from datetime import datetime, timezone
 from supabase import create_client
-from chatbot import chatbot_bp
 
 app = Flask(__name__)
 CORS(app)
-app.register_blueprint(chatbot_bp)
+
+try:
+    from chatbot import chatbot_bp
+    app.register_blueprint(chatbot_bp)
+except:
+    pass
 
 # ─── SUPABASE ─────────────────────────────────────────────────────────────────
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY')  # service_role key
+SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY')
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-# ─── LOAD MODELS (YOLO sudah pindah ke browser, jadi cuma LSTM + RF) ─────────
+# ─── LSTM MODEL ───────────────────────────────────────────────────────────────
 class LSTMModel(nn.Module):
     def __init__(self):
         super().__init__()
@@ -24,7 +28,6 @@ class LSTMModel(nn.Module):
 
     def forward(self, x):
         return self.fc(self.lstm(x)[0][:, -1, :])
-
 
 lstm_model = LSTMModel()
 try:
@@ -48,10 +51,41 @@ MAX_LEN = 5
 MUCUS_TYPE_MAP = {'transparant': 0, 'darah': 1, 'putih': 2, 'kuning': 3}
 
 
+# ─── ESP32 MOCK: Klasifikasi resistansi & suhu berdasarkan tabel ──────────────
+def mock_esp32_from_phase(phase):
+    """
+    Generate nilai resistansi & suhu mock berdasarkan fase estrus LSTM.
+    Berdasarkan Tabel 3.8: Klasifikasi Fase Estrus Berdasarkan Resistansi dan Suhu
+    """
+    import random
+    if phase == 'Day2' or phase == 'Day3':
+        # Peak Estrus: resistansi < 140, suhu > 39
+        resistance = random.randint(100, 139)
+        temperature = round(random.uniform(39.1, 39.8), 1)
+        status = 'Peak Estrus'
+    elif phase == 'Day1':
+        # Estrus: resistansi 140-220, suhu 38-39
+        resistance = random.randint(140, 220)
+        temperature = round(random.uniform(38.0, 39.0), 1)
+        status = 'Estrus'
+    elif phase == 'Kuning':
+        # Non Estrus / lewat peak
+        resistance = random.randint(601, 900)
+        temperature = round(random.uniform(37.5, 38.2), 1)
+        status = 'Non Estrus'
+    else:
+        # Menuju Estrus / default
+        resistance = random.randint(220, 600)
+        temperature = round(random.uniform(37.0, 38.0), 1)
+        status = 'Menuju Estrus'
+    return resistance, temperature, status
+
+
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
-def predict_lstm(seq):
+def predict_lstm(seq, current_dt_hours=0):
     empty = {'predicted': 'Unknown', 'window_remaining': None,
-             'p_day1': 0, 'p_day2': 0, 'p_day3': 0, 'p_kuning': 0}
+             'p_day1': 0, 'p_day2': 0, 'p_day3': 0, 'p_kuning': 0,
+             'peak_probability': 0}
     if lstm_model is None:
         return empty
     try:
@@ -60,17 +94,53 @@ def predict_lstm(seq):
         x = torch.tensor([s[-MAX_LEN:]], dtype=torch.float32)
         with torch.no_grad():
             p = lstm_model(x).cpu().squeeze().numpy()
+
         idx = int(p.argmax())
-        return {'predicted': NAMES[idx],
-                'window_remaining': max(0, 3 - idx) if idx < 3 else None,
-                'p_day1': round(float(p[0]), 3), 'p_day2': round(float(p[1]), 3),
-                'p_day3': round(float(p[2]), 3), 'p_kuning': round(float(p[3]), 3)}
+
+        # Constraint: hari-1 (< 24 jam) tidak bisa peak
+        if current_dt_hours < 24 and idx in [1, 2]:
+            idx = 0
+
+        # Window remaining dinamis berdasarkan dt_hours
+        if current_dt_hours < 24:
+            window = 2
+        elif current_dt_hours < 48:
+            window = 1
+        elif current_dt_hours < 72:
+            window = 0
+        else:
+            window = None  # window terlewat
+
+        peak_prob = round(float(p[1]) + float(p[2]), 3)
+
+        return {
+            'predicted': NAMES[idx],
+            'window_remaining': window,
+            'p_day1': round(float(p[0]), 3),
+            'p_day2': round(float(p[1]), 3),
+            'p_day3': round(float(p[2]), 3),
+            'p_kuning': round(float(p[3]), 3),
+            'peak_probability': peak_prob
+        }
     except Exception as e:
         print(f"LSTM error: {e}")
         return empty
 
 
 def predict_rf(lstm_out, temperature, resistance, mucus_type, confidence):
+    # Rule-based dari tabel klasifikasi jika RF tidak ada
+    def rule_based(temperature, resistance, lstm_out):
+        if lstm_out['predicted'] == 'Kuning' or lstm_out.get('window_remaining') is None:
+            return 'JANGAN_IB'
+        if resistance is not None and resistance < 140 and temperature and temperature > 39:
+            return 'IB_SEKARANG'
+        if resistance is not None and 140 <= resistance <= 220 and temperature and 38 <= temperature <= 39:
+            if lstm_out['predicted'] in ['Day2', 'Day3']:
+                return 'IB_SEKARANG'
+        if lstm_out.get('window_remaining', 0) == 0:
+            return 'JANGAN_IB'
+        return 'STANDBY'
+
     if rf_model:
         try:
             features = [[mucus_type or 0, confidence or 0,
@@ -80,11 +150,8 @@ def predict_rf(lstm_out, temperature, resistance, mucus_type, confidence):
             return rf_model.predict(features)[0]
         except Exception as e:
             print(f"RF error: {e}")
-    if lstm_out['predicted'] == 'Kuning':
-        return 'JANGAN_IB'
-    if lstm_out['predicted'] in ['Day2', 'Day3'] and temperature and 38.2 <= temperature <= 39.5:
-        return 'IB_SEKARANG'
-    return 'STANDBY'
+
+    return rule_based(temperature, resistance, lstm_out)
 
 
 def now_iso():
@@ -99,13 +166,11 @@ def health():
 
 @app.route('/api/esp32', methods=['POST'])
 def esp32():
-    """ESP32 kirim resistansi mentah -> simpan ke Supabase."""
     data = request.get_json(force=True)
     cattle_id = data.get('cattle_id')
     resistance = data.get('resistance')
     if resistance is None:
         return jsonify({'error': 'resistance wajib'}), 400
-
     supabase.table('esp32_readings').insert({
         'cattle_id': cattle_id,
         'resistance_ohm': resistance,
@@ -116,7 +181,6 @@ def esp32():
 
 @app.route('/api/esp32/latest', methods=['GET'])
 def esp32_latest():
-    """Frontend polling nilai resistansi terbaru per sapi."""
     cattle_id = request.args.get('cattle_id')
     q = supabase.table('esp32_readings').select('*').order('created_at', desc=True).limit(1)
     if cattle_id:
@@ -129,31 +193,34 @@ def esp32_latest():
 
 @app.route('/api/tracking', methods=['POST'])
 def tracking():
-    """
-    Browser sudah menjalankan YOLO sendiri (onnxruntime-web) dan kirim hasilnya
-    di sini sebagai JSON. Server tinggal jalankan LSTM + RF, lalu simpan ke Supabase.
-    Body: { cattle_id, farmer_name, mucus_color, confidence, temperature, dt_hours }
-    """
     data = request.get_json(force=True)
-    cattle_id = data.get('cattle_id')
+    cattle_id   = data.get('cattle_id')
     farmer_name = data.get('farmer_name', '')
     mucus_color = data.get('mucus_color')
-    confidence = data.get('confidence', 1.0)
+    confidence  = data.get('confidence', 1.0)
     temperature = data.get('temperature')
-    dt_hours = data.get('dt_hours', 0)
+    dt_hours    = data.get('dt_hours', 0)
 
     if not cattle_id or not mucus_color:
         return jsonify({'error': 'cattle_id dan mucus_color wajib'}), 400
 
     mucus_type = MUCUS_TYPE_MAP.get(mucus_color, 0)
 
-    # Ambil 4 riwayat terakhir sapi ini + resistansi ESP32 terbaru, semua dari Supabase
+    # Ambil histori terakhir DENGAN dt_hours
     hist = (supabase.table('tracking_logs')
-            .select('mucus_type, confidence')
+            .select('mucus_type, confidence, dt_hours')
             .eq('cattle_id', cattle_id)
             .order('created_at', desc=True)
             .limit(4)
             .execute())
+
+    rows = list(reversed(hist.data)) if hist.data else []
+    seq  = [[r['mucus_type'], r.get('dt_hours', 0), r['confidence']] for r in rows]
+    seq.append([mucus_type, dt_hours, confidence])
+
+    lstm_out = predict_lstm(seq, current_dt_hours=dt_hours)
+
+    # ── ESP32 MOCK jika tidak ada data ESP32 fisik ────────────────────────────
     esp = (supabase.table('esp32_readings')
            .select('resistance_ohm')
            .eq('cattle_id', cattle_id)
@@ -161,53 +228,69 @@ def tracking():
            .limit(1)
            .execute())
 
-    resistance = esp.data[0]['resistance_ohm'] if esp.data else None
-    rows = list(reversed(hist.data)) if hist.data else []
-    seq = [[r['mucus_type'], dt_hours, r['confidence']] for r in rows]
-    seq.append([mucus_type, dt_hours, confidence])
+    if esp.data:
+        resistance = esp.data[0]['resistance_ohm']
+        esp_mocked = False
+    else:
+        # Generate mock berdasarkan fase LSTM → tabel klasifikasi
+        resistance, temperature_mock, esp_status = mock_esp32_from_phase(lstm_out['predicted'])
+        if not temperature:
+            temperature = temperature_mock
+        esp_mocked = True
 
-    lstm_out = predict_lstm(seq)
     decision = predict_rf(lstm_out, temperature, resistance, mucus_type, confidence)
 
+    # Flag window terlewat
+    if dt_hours >= 72:
+        decision = 'WINDOW_TERLEWAT'
+        lstm_out['predicted'] = 'Kuning'
+
     supabase.table('tracking_logs').insert({
-        'cattle_id': cattle_id,
-        'farmer_name': farmer_name,
-        'mucus_type': mucus_type,
-        'mucus_color': mucus_color,
-        'confidence': confidence,
-        'temperature': temperature,
+        'cattle_id':    cattle_id,
+        'farmer_name':  farmer_name,
+        'mucus_type':   mucus_type,
+        'mucus_color':  mucus_color,
+        'confidence':   confidence,
+        'temperature':  temperature,
         'resistance_ohm': resistance,
-        'p_day1': lstm_out['p_day1'], 'p_day2': lstm_out['p_day2'],
-        'p_day3': lstm_out['p_day3'], 'p_kuning': lstm_out['p_kuning'],
-        'predicted': decision,
-        'created_at': now_iso()
+        'dt_hours':     dt_hours,
+        'p_day1':       lstm_out['p_day1'],
+        'p_day2':       lstm_out['p_day2'],
+        'p_day3':       lstm_out['p_day3'],
+        'p_kuning':     lstm_out['p_kuning'],
+        'predicted':    decision,
+        'created_at':   now_iso()
     }).execute()
 
-    return jsonify({'cattle_id': cattle_id, 'mucus_color': mucus_color,
-                     'confidence': confidence, 'temperature': temperature,
-                     'resistance': resistance, 'lstm': lstm_out, 'decision': decision})
+    return jsonify({
+        'cattle_id':        cattle_id,
+        'mucus_color':      mucus_color,
+        'confidence':       confidence,
+        'temperature':      temperature,
+        'resistance':       resistance,
+        'esp_mocked':       esp_mocked,
+        'lstm':             lstm_out,
+        'decision':         decision
+    })
 
 
 @app.route('/api/cows', methods=['POST'])
 def register_cow():
-    """Simpan/update identitas sapi & peternak (dipanggil dari form Pengaturan Data)."""
     data = request.get_json(force=True)
     cattle_id = data.get('cattle_id')
     if not cattle_id:
         return jsonify({'error': 'cattle_id wajib'}), 400
-
     supabase.table('cows').upsert({
-        'cattle_id': cattle_id,
-        'farmer_name': data.get('farmer_name', ''),
+        'cattle_id':    cattle_id,
+        'farmer_name':  data.get('farmer_name', ''),
         'farm_address': data.get('farm_address', ''),
-        'cattle_age': data.get('cattle_age', '')
+        'cattle_age':   data.get('cattle_age', '')
     }, on_conflict='cattle_id').execute()
     return jsonify({'status': 'ok'})
 
 
 @app.route('/api/cows/history', methods=['GET'])
 def cows_history():
-    """Daftar semua sapi + catatan/prediksi terakhirnya, untuk tab Histori."""
     cows = supabase.table('cows').select('*').execute().data or []
     result = []
     for cow in cows:
@@ -219,17 +302,16 @@ def cows_history():
                 .execute())
         last_row = last.data[0] if last.data else {}
         result.append({
-            'cattle_id': cow['cattle_id'],
-            'cattle_age': cow.get('cattle_age'),
+            'cattle_id':   cow['cattle_id'],
+            'cattle_age':  cow.get('cattle_age'),
             'last_record': last_row.get('created_at'),
-            'last_ib': last_row.get('predicted')
+            'last_ib':     last_row.get('predicted')
         })
     return jsonify(result)
 
 
 @app.route('/api/tracking/<cattle_id>', methods=['GET'])
 def tracking_detail(cattle_id):
-    """Histori lengkap parameter untuk satu sapi (dipakai di detail Histori)."""
     rows = (supabase.table('tracking_logs')
             .select('*')
             .eq('cattle_id', cattle_id)
