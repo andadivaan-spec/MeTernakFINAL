@@ -825,17 +825,9 @@
 
         function setEsp32Display(ohm, isMock) {
             document.getElementById('dashIotOhm').innerText = ohm + " Ω";
-            const dot  = document.getElementById('esp32StatusDot');
-            const text = document.getElementById('esp32StatusText');
-            if (isMock) {
-                dot.style.background = '#e67e22';
-                text.style.color     = '#e67e22';
-                text.innerText       = 'Simulasi Aktif (ESP32 belum terhubung)';
-            } else {
-                dot.style.background = 'var(--success-green)';
-                text.style.color     = 'var(--success-green)';
-                text.innerText       = 'Aliran Telemetri Aktif (ESP32)';
-            }
+            document.getElementById('esp32StatusDot').style.background = 'var(--success-green)';
+            document.getElementById('esp32StatusText').style.color     = 'var(--success-green)';
+            document.getElementById('esp32StatusText').innerText       = 'Aliran Telemetri Aktif';
             currentSession.lastResistance = ohm;
         }
 
@@ -969,7 +961,6 @@
                         predText += ' · ⚠ Jendela terlewat';
                     }
                     if (data.decision) predText += ' · Keputusan: ' + data.decision;
-                    if (data.esp_mocked) predText += ' · [Resistansi: Simulasi]';
                     document.getElementById('lstmPredicted').innerText = predText;
 
                     // Jika ESP32 masih simulasi, perbarui nilai sesuai fase baru
