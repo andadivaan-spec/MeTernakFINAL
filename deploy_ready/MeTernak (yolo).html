@@ -426,10 +426,10 @@
                 <div class="card">
                     <div class="card-title">3. Resistansi Lendir (ESP32)</div>
                     <div class="stream-val" id="dashIotOhm">-- Ω</div>
-                    <div
+                    <div id="esp32StatusBadge"
                         style="font-size: 11px; color: var(--success-green); display: flex; align-items: center; gap: 4px;">
-                        <span style="width:6px; height:6px; background:var(--success-green); border-radius:50%;"></span>
-                        Aliran Telemetri Aktif
+                        <span id="esp32StatusDot" style="width:6px; height:6px; background:var(--success-green); border-radius:50%; flex-shrink:0;"></span>
+                        <span id="esp32StatusText">Menghubungkan ke ESP32...</span>
                     </div>
                 </div>
 
@@ -582,7 +582,9 @@
             cattleAge: '',
             currentMucusColor: '',
             lstmTimeSeries: [],
-            isRegistered: false
+            isRegistered: false,
+            lastLstmPhase: 'default',   // fase LSTM terakhir (untuk sinkron mockup ESP32)
+            lastResistance: null        // nilai resistansi terakhir (real atau mockup)
         };
 
         const BACKEND_URL = 'https://meternakfinal-production.up.railway.app';
@@ -806,19 +808,71 @@
 
         function simulateMucusDetection() { runYoloOnFrame(); }
 
+        // ── ESP32: nilai mockup berdasarkan fase (sinkron dengan backend) ──────
+        const ESP32_MOCK_BY_PHASE = {
+            'Day1':    { min: 140, max: 220 },
+            'Day2':    { min: 100, max: 139 },
+            'Day3':    { min: 100, max: 139 },
+            'Kuning':  { min: 601, max: 900 },
+            'default': { min: 220, max: 600 }
+        };
+
+        function getMockResistance() {
+            const phase = currentSession.lastLstmPhase || 'default';
+            const range = ESP32_MOCK_BY_PHASE[phase] || ESP32_MOCK_BY_PHASE['default'];
+            return Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
+        }
+
+        function setEsp32Display(ohm, isMock) {
+            document.getElementById('dashIotOhm').innerText = ohm + " Ω";
+            const dot  = document.getElementById('esp32StatusDot');
+            const text = document.getElementById('esp32StatusText');
+            if (isMock) {
+                dot.style.background = '#e67e22';
+                text.style.color     = '#e67e22';
+                text.innerText       = 'Simulasi Aktif (ESP32 belum terhubung)';
+            } else {
+                dot.style.background = 'var(--success-green)';
+                text.style.color     = 'var(--success-green)';
+                text.innerText       = 'Aliran Telemetri Aktif (ESP32)';
+            }
+            currentSession.lastResistance = ohm;
+        }
+
         function initEsp32TelemetryStream() {
-            setInterval(async () => {
+            // ── MOCKUP MODE: langsung aktif tanpa coba fetch ESP32 ──────────────
+            // Saat ESP32 hardware sudah ready, ganti blok ini dengan versi polling:
+            //   1. Hapus baris setEsp32Display & setInterval di bawah
+            //   2. Uncomment blok async pollEsp32 (lihat komentar di bawah)
+            function runMockup() {
+                setEsp32Display(getMockResistance(), true);
+                runHybridInferencePipeline();
+            }
+            runMockup();
+            setInterval(runMockup, 3000);
+
+            /* ── AKTIFKAN INI SAAT ESP32 HARDWARE READY ────────────────────────
+            async function pollEsp32() {
                 try {
-                    const res = await fetch(`${BACKEND_URL}/api/esp32/latest?cattle_id=${currentSession.cattleId}`);
+                    const res = await fetch(
+                        `${BACKEND_URL}/api/esp32/latest?cattle_id=${currentSession.cattleId || ''}`,
+                        { signal: AbortSignal.timeout(4000) }
+                    );
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
                     const data = await res.json();
                     if (data.resistance_ohm != null) {
-                        document.getElementById('dashIotOhm').innerText = data.resistance_ohm + " Ω";
+                        setEsp32Display(data.resistance_ohm, false);
                         runHybridInferencePipeline();
-                    }
+                    } else { throw new Error('no data'); }
                 } catch (err) {
-                    console.warn('Gagal ambil data ESP32:', err.message);
+                    setEsp32Display(getMockResistance(), true);
+                    runHybridInferencePipeline();
+                    console.warn('ESP32 fallback mockup:', err.message);
                 }
-            }, 3000);
+            }
+            pollEsp32();
+            setInterval(pollEsp32, 3000);
+            ───────────────────────────────────────────────────────────────────── */
         }
 
         function runHybridInferencePipeline() {
@@ -883,14 +937,19 @@
                 });
                 const data = await res.json();
                 if (data.lstm) {
+                    // Simpan fase ke session agar mockup ESP32 sinkron dengan prediksi
+                    currentSession.lastLstmPhase = data.lstm.predicted;
+
                     document.getElementById('lstmEmptyMsg').style.display = 'none';
                     const bars = document.getElementById('probBarsContainer');
                     bars.style.display = 'flex';
                     document.getElementById('lstmCattleId').innerText = 'ID Sapi: ' + payload.cattle_id;
+
                     const p1 = (data.lstm.p_day1 * 100).toFixed(1);
                     const p2 = (data.lstm.p_day2 * 100).toFixed(1);
                     const p3 = (data.lstm.p_day3 * 100).toFixed(1);
                     const pk = (data.lstm.p_kuning * 100).toFixed(1);
+
                     document.getElementById('pDay1Bar').style.width = p1 + '%';
                     document.getElementById('pDay1Label').innerText = p1 + '%';
                     document.getElementById('pDay2Bar').style.width = p2 + '%';
@@ -899,9 +958,25 @@
                     document.getElementById('pDay3Label').innerText = p3 + '%';
                     document.getElementById('pKuningBar').style.width = pk + '%';
                     document.getElementById('pKuningLabel').innerText = pk + '%';
-                    document.getElementById('lstmPredicted').innerText = 'Prediksi: ' + data.lstm.predicted +
-                        (data.lstm.window_remaining !== null ? ' · Sisa jendela: ' + data.lstm.window_remaining + ' hari' : '') +
-                        (data.decision ? ' · Keputusan: ' + data.decision : '');
+
+                    // Tampilkan baris prediksi + probabilitas peak estrus
+                    const peakPct = ((data.lstm.peak_probability || 0) * 100).toFixed(1);
+                    let predText = 'Prediksi Fase: ' + data.lstm.predicted;
+                    predText += ' · Prob. Estrus (Peak): ' + peakPct + '%';
+                    if (data.lstm.window_remaining !== null && data.lstm.window_remaining !== undefined) {
+                        predText += ' · Sisa jendela: ' + data.lstm.window_remaining + ' hari';
+                    } else if (data.lstm.window_remaining === null) {
+                        predText += ' · ⚠ Jendela terlewat';
+                    }
+                    if (data.decision) predText += ' · Keputusan: ' + data.decision;
+                    if (data.esp_mocked) predText += ' · [Resistansi: Simulasi]';
+                    document.getElementById('lstmPredicted').innerText = predText;
+
+                    // Jika ESP32 masih simulasi, perbarui nilai sesuai fase baru
+                    const statusText = document.getElementById('esp32StatusText');
+                    if (statusText && statusText.innerText.includes('Simulasi')) {
+                        setEsp32Display(getMockResistance(), true);
+                    }
                 }
             } catch (err) {
                 console.warn('Backend belum berjalan:', err.message);
