@@ -740,6 +740,7 @@
             tag.innerHTML = `${info.label} <span style="font-size:10px;">(${(conf * 100).toFixed(1)}%)</span>`;
             tag.style.background = info.bg;
             showDetectionModal(info.label, conf);
+            sendDataToBackend();
             runHybridInferencePipeline();
         }
 
