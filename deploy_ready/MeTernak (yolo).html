@@ -495,6 +495,22 @@
             <div style="display: grid; grid-template-columns: minmax(0, 600px); gap: 30px; width: 100%;">
                 <section class="card" style="display: flex; flex-direction: column; gap: 16px;">
                     <h3 style="color: var(--primary-brown); font-size:15px;">Lengkapi Data Profil</h3>
+
+                    <!-- PILIH SAPI EXISTING -->
+                    <div>
+                        <label style="font-size: 12px; font-weight: 600;">Pilih Sapi Terdaftar
+                            <span style="font-weight:400; color:#8e8278;">(opsional — isi otomatis)</span>
+                        </label>
+                        <div style="display:flex; gap:8px;">
+                            <select id="cattleDropdown" class="large-input" style="flex:1;"
+                                onchange="autofillFromDropdown()">
+                                <option value="">-- Sapi Baru / Isi Manual --</option>
+                            </select>
+                            <button class="btn-action" style="white-space:nowrap; padding:0 14px;"
+                                onclick="loadCattleDropdown()">&#8635;</button>
+                        </div>
+                    </div>
+
                     <div>
                         <label style="font-size: 12px; font-weight: 600;">Nama Lengkap Peternak</label>
                         <input type="text" id="regFarmerName" class="large-input" placeholder="Masukkan nama Anda">
@@ -684,7 +700,7 @@
             return new ort.Tensor('float32', input, [1, 3, 640, 640]);
         }
 
-        function parseYoloOutput(outputData, confThreshold = 0.15) {
+        function parseYoloOutput(outputData, confThreshold = 0.50) {
             const numBoxes = outputData.dims[2];
             const numAttrs = outputData.dims[1];
             const nc = numAttrs - 4;
@@ -831,6 +847,50 @@
             document.getElementById('esp32StatusText').innerText       = 'Aliran Telemetri Aktif';
             currentSession.lastResistance = ohm;
         }
+
+        // ── DROPDOWN: Pilih sapi terdaftar → autofill form ──────────────────
+        let _cattleList = [];
+
+        async function loadCattleDropdown() {
+            try {
+                const res = await fetch(BACKEND_URL + '/api/cows/history');
+                const rows = await res.json();
+                _cattleList = rows;
+                const sel = document.getElementById('cattleDropdown');
+                sel.innerHTML = '<option value="">-- Sapi Baru / Isi Manual --</option>';
+                rows.forEach(r => {
+                    const opt = document.createElement('option');
+                    opt.value = r.cattle_id;
+                    opt.innerText = r.cattle_id + (r.farmer_name ? ' — ' + r.farmer_name : '');
+                    sel.appendChild(opt);
+                });
+            } catch (e) { console.warn('Gagal load dropdown sapi:', e.message); }
+        }
+
+        function autofillFromDropdown() {
+            const sel = document.getElementById('cattleDropdown');
+            const cid = sel.value;
+            if (!cid) return;
+            const row = _cattleList.find(r => r.cattle_id === cid);
+            if (!row) return;
+            document.getElementById('regCattleId').value    = row.cattle_id    || '';
+            document.getElementById('regFarmerName').value  = row.farmer_name  || '';
+            document.getElementById('regFarmAddress').value = row.farm_address  || '';
+            document.getElementById('regCattleAge').value   = row.cattle_age   || '';
+
+            // Langsung aktifkan sesi tanpa klik "Perbarui Profil" & tanpa alert
+            currentSession.farmerName   = row.farmer_name  || '';
+            currentSession.farmAddress  = row.farm_address || '';
+            currentSession.cattleId     = row.cattle_id    || '';
+            currentSession.cattleAge    = row.cattle_age   || '';
+            currentSession.isRegistered = true;
+            const name = currentSession.farmerName;
+            const cage = currentSession.cattleAge;
+            document.getElementById('sidebarSessionStatus').innerText = `ID Sapi: ${cid} (${cage})`;
+            document.getElementById('dashHeadline').innerText = `Pemantauan Pembiakan: ${cid}`;
+            document.getElementById('dashSubline').innerText  = `Pemilik: ${name} | Lokasi: ${currentSession.farmAddress} | Umur: ${cage}`;
+        }
+        // ─────────────────────────────────────────────────────────────────────
 
         function initEsp32TelemetryStream() {
             // ── MOCKUP MODE: langsung aktif tanpa coba fetch ESP32 ──────────────
@@ -1059,6 +1119,7 @@
         window.onload = function () {
             initEsp32TelemetryStream();
             loadYoloModel();
+            loadCattleDropdown();
         };
     </script>
 </body>
